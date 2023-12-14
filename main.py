@@ -1,6 +1,8 @@
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.cluster import SpectralClustering
+from sklearn.metrics import silhouette_score
 
 def visualize_partial_matrix(matrix, rows, cols, title):
     print('visualize_partial_matrix')
@@ -73,27 +75,54 @@ def create_user_profile_matrix(ratings, content_matrix):
 
     # Merge ratings and content_matrix on movieId to get genres for each rating
     merged_df = pd.merge(ratings, content_matrix, left_on='movieId', right_index=True)
-    merged_df = merged_df.sort_values(by='userId')
-    merged_df.to_csv('merged_df.csv')
 
-    # Initialize the user profile matrix with zeros
-    user_profile_matrix = pd.DataFrame(0, index=ratings['userId'], columns=content_matrix.columns)
+    # Group by 'userId' and aggregate the values
+    grouped_df = merged_df.groupby('userId').agg(lambda x: sum(x) if x.name in content_matrix.columns else x.iloc[0])
 
-    # Iterate through each row (rating) in the merged dataframe
-    for index, row in merged_df.iterrows():
-        user_id = row['userId']
-        rating = row['rating']
-        content_vector = row.iloc[3:]  # Assuming the content features start from the 4th column
-        if(user_id % 1000 == 0):
-            print('user_id', user_id)
-        # Update the user profile matrix using the linear combination formula
-        user_profile_matrix.loc[user_id] += rating * content_vector
+    # Extract relevant columns for the user profile matrix
+    relevant_columns = content_matrix.columns.intersection(grouped_df.columns)
+    
+    # Create the user profile matrix directly
+    user_profile_matrix = pd.DataFrame(grouped_df['rating'].values[:, None] * grouped_df[relevant_columns].values,
+                                       index=grouped_df.index,
+                                       columns=relevant_columns)
 
     # Save the user_profile_matrix to a CSV file
     user_profile_matrix.to_csv('user_profile_matrix.csv')
 
-    print('Updated user_profile_matrix saved to user_profile_matrix_updated.csv')
     return user_profile_matrix
+
+
+
+def spectral_clustering(user_profile_matrix):
+
+    # Convert user_profile_matrix to 2D for visualization (you may need to adjust columns)
+    user_profile_2d = user_profile_matrix.iloc[:, :2]
+
+    # Perform spectral clustering with different values of k
+    k_values = [2, 3, 4, 5]
+
+    scores = []
+    for k in k_values:
+        # Apply spectral clustering
+        clustering = SpectralClustering(n_clusters=k, random_state=42)
+        labels = clustering.fit_predict(user_profile_2d)
+
+        # Compute silhouette score
+        silhouette_avg = silhouette_score(user_profile_2d, labels)
+        scores.append(silhouette_avg)
+
+        # Visualize the clusters
+        plt.scatter(user_profile_2d.iloc[:, 0], user_profile_2d.iloc[:, 1], c=labels, cmap='viridis')
+        plt.title(f'Spectral Clustering (k={k}), Silhouette Score: {silhouette_avg:.2f}')
+        plt.show()
+
+    # Plot silhouette scores
+    plt.plot(k_values, scores, marker='o')
+    plt.xlabel('Number of Clusters (k)')
+    plt.ylabel('Silhouette Score')
+    plt.title('Silhouette Score for Spectral Clustering')
+    plt.show()
 
 
 def main():
@@ -113,12 +142,17 @@ def main():
     # create_content_matrix(movies1)
 
     content_matrix = pd.read_csv('content_matrix.csv', index_col=0)
-    # visualize_partial_matrix(content_matrix, 10, 19, 'Matrice binaire de contenu C')
+    visualize_partial_matrix(content_matrix, 30, 19, 'Matrice binaire de contenu C')
 
     # Partie 4: Construire la matrice de profil des utilisateurs P
-    user_profile_matrix = create_user_profile_matrix(ratings1, content_matrix)
+    # user_profile_matrix = create_user_profile_matrix(ratings1, content_matrix)
+
     user_profile_matrix = pd.read_csv('user_profile_matrix.csv', index_col=0)
-    visualize_partial_matrix(user_profile_matrix, 10, 19, 'Matrice de profil des utilisateurs P')
+    visualize_partial_matrix(user_profile_matrix, 30, 19, 'Matrice de profil des utilisateurs P')
+
+    # Partie 5: Clustering spectral
+    spectral_clustering(user_profile_matrix)
+
 
 if __name__ == "__main__":
     main()
